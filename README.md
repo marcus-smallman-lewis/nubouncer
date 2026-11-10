@@ -13,8 +13,10 @@ AI coding assistants sometimes suggest NuGet packages (or versions) that don't e
 | First published less than 30 days ago | ⚠ Ask first |
 | Fewer than 1,000 downloads | ⚠ Ask first |
 | Uses a trusted prefix like `Microsoft.` without a verified owner | ⚠ Ask first |
-| Version is deprecated | ⚠ Ask first |
 | Version has known vulnerabilities | ⚠ Ask first |
+| Version is deprecated because of critical bugs | ⚠ Ask first |
+| Version is deprecated as legacy (e.g. xunit 2 → v3) | ℹ Note only |
+| Popular package using a trusted prefix, not from its owner | ℹ Note only |
 
 ## Install
 
@@ -29,7 +31,21 @@ nubouncer check Newtonsoft.Json
 nubouncer check Serilog --version 4.0.1
 ```
 
-Exit codes: `0` fine, `1` warnings, `2` blocked.
+## Scan a whole codebase
+
+```bash
+nubouncer scan            # current folder
+nubouncer scan path/to/repo
+```
+
+Checks every package in every `.csproj`, `.fsproj`, `.vbproj`, `Directory.Packages.props` and `packages.config` under the folder. Handy in CI:
+
+```yaml
+- run: dotnet tool install -g NuBouncer
+- run: nubouncer scan
+```
+
+Exit codes for `check` and `scan`: `0` fine, `1` warnings, `2` blocked.
 
 ## Use with Claude Code
 
@@ -65,6 +81,15 @@ Create a `.nubouncer.json` in your repo (NuBouncer looks in the current folder a
   "minAgeDays": 30
 }
 ```
+
+## How well does it work?
+
+Tested against live nuget.org (November 2026):
+
+- **No false alarms** on NuGet's 100 most-downloaded packages, 100 packages ranked around #1,000, or 100 niche PDF/CSV packages.
+- **Blocked all 18 genuinely made-up names** from a list of 20 plausible AI-style guesses, such as `AutoMapper.Extensions.DependencyInjection` and `Polly.Extensions.Retry`. The other two turned out to exist.
+
+The test projects are in [`validation/`](validation). Run `nubouncer scan validation/top100` to try it yourself.
 
 ## Privacy
 
