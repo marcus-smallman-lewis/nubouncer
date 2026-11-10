@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.Http.Retry" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.BulkExtensions" />
+    <PackageReference Include="AutoMapper.Extensions.DependencyInjection" />
+    <PackageReference Include="MediatR.Extensions.DependencyInjection" />
+    <PackageReference Include="FluentValidation.DependencyInjection" />
+    <PackageReference Include="Polly.Extensions.Retry" />
+    <PackageReference Include="Azure.Storage.Blobs.Extensions" />
+    <PackageReference Include="Serilog.Sinks.ApplicationInsights.Core" />
+    <PackageReference Include="Microsoft.AspNetCore.RateLimiting" />
+    <PackageReference Include="Microsoft.Extensions.Caching.Redis.Core" />
+    <PackageReference Include="Swashbuckle.AspNetCore.Annotations.Extensions" />
+    <PackageReference Include="Microsoft.SemanticKernel.Connectors.Claude" />
+    <PackageReference Include="CsvHelper.Extensions" />
+    <PackageReference Include="QuestPDF.Fluent" />
+    <PackageReference Include="Dapper.Contrib.Extensions" />
+    <PackageReference Include="System.Text.Json.Extensions" />
+    <PackageReference Include="Newtonsoft.Json.Extensions" />
+    <PackageReference Include="OpenAI.Client.Dotnet" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Serilog" />
+    <PackageReference Include="Microsoft.AspNetCore.Authentication.Jwt" />
+  </ItemGroup>
+</Project>

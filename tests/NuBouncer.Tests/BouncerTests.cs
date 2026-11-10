@@ -15,8 +15,8 @@ public class BouncerTests
         new(new NuGetClient(new HttpClient()), config ?? new BouncerConfig(), new FixedClock(Now));
 
     private static VersionInfo V(string version, int daysAgo = 400, bool listed = true,
-        string? deprecation = null, int vulns = 0, int severity = -1) =>
-        new(version, Now.AddDays(-daysAgo), listed, deprecation, null, vulns, severity);
+        string? deprecation = null, string[]? reasons = null, int vulns = 0, int severity = -1) =>
+        new(version, Now.AddDays(-daysAgo), listed, deprecation, null, reasons ?? [], vulns, severity);
 
     private static PackageInfo Package(string id, long downloads, bool verified, params VersionInfo[] versions) =>
         new(id, versions, downloads, verified);
@@ -62,12 +62,38 @@ public class BouncerTests
     }
 
     [Fact]
-    public void Deprecated_and_vulnerable_versions_are_flagged()
+    public void Popular_unofficial_package_with_trusted_prefix_gets_a_note_naming_the_publisher()
+    {
+        var package = new PackageInfo("Microsoft.Extensions.Caching.Redis.Core", [V("1.0.0")], 1_000_000, false, ["SomeDev"]);
+        var findings = MakeBouncer().Evaluate(new(package.Id), package);
+        Assert.DoesNotContain(findings, f => f.Level >= Level.Warn);
+        Assert.Contains(findings, f => f.Level == Level.Info && f.Message.Contains("published by SomeDev"));
+    }
+
+    [Fact]
+    public void Vulnerable_versions_are_flagged()
     {
         var findings = MakeBouncer().Evaluate(new("Old.Lib", "1.0.0"),
-            Package("Old.Lib", 5_000_000, true, V("1.0.0", deprecation: "Legacy", vulns: 2, severity: 3)));
-        Assert.Contains(findings, f => f.Message.Contains("deprecated (Legacy)"));
-        Assert.Contains(findings, f => f.Message.Contains("2 known vulnerabilities (worst: critical)"));
+            Package("Old.Lib", 5_000_000, true, V("1.0.0", vulns: 2, severity: 3)));
+        Assert.Contains(findings, f => f.Level == Level.Warn && f.Message.Contains("2 known vulnerabilities (worst: critical)"));
+    }
+
+    [Fact]
+    public void Legacy_deprecation_is_only_a_note()
+    {
+        // e.g. xunit 2.x: deprecated because v3 exists, but still maintained.
+        var findings = MakeBouncer().Evaluate(new("xunit", "2.9.3"),
+            Package("xunit", 900_000_000, true, V("2.9.3", deprecation: "Moved to v3.\n\nSee guide.", reasons: ["Legacy"])));
+        Assert.DoesNotContain(findings, f => f.Level >= Level.Warn);
+        Assert.Contains(findings, f => f.Level == Level.Info && f.Message.Contains("(Moved to v3. See guide.)"));
+    }
+
+    [Fact]
+    public void Critical_bug_deprecation_is_a_warning()
+    {
+        var findings = MakeBouncer().Evaluate(new("Buggy.Lib", "1.0.0"),
+            Package("Buggy.Lib", 5_000_000, true, V("1.0.0", deprecation: "Data loss bug", reasons: ["CriticalBugs"])));
+        Assert.Contains(findings, f => f.Level == Level.Warn && f.Message.Contains("critical bugs"));
     }
 
     [Fact]

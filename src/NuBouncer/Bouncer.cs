@@ -1,6 +1,10 @@
 namespace NuBouncer;
 
-public enum Level { Ok = 0, Warn = 1, Block = 2 }
+/// <summary>
+/// Ok and Info never interrupt anyone (Info is shown by check/scan only).
+/// Warn makes the Claude Code hook ask first; Block denies.
+/// </summary>
+public enum Level { Ok = 0, Info = 1, Warn = 2, Block = 3 }
 
 public sealed record Finding(Level Level, string Message);
 
@@ -95,17 +99,26 @@ public sealed class Bouncer(NuGetClient nuget, BouncerConfig config, TimeProvide
         }
 
         var prefix = TrustedPrefixes.FirstOrDefault(p => package.Id.StartsWith(p, StringComparison.OrdinalIgnoreCase));
-        if (prefix is not null && !package.Verified && package.TotalDownloads < 100_000)
+        if (prefix is not null && !package.Verified)
         {
-            findings.Add(new Finding(Level.Warn,
-                $"{package.Id} uses the '{prefix}' prefix but isn't from a verified owner. " +
-                "It may be pretending to be an official package."));
+            var by = package.Owners is { Count: > 0 } owners ? $" (published by {string.Join(", ", owners)})" : "";
+            // Popular ones are usually community forks: worth knowing, not worth stopping for.
+            findings.Add(package.TotalDownloads < 100_000
+                ? new Finding(Level.Warn,
+                    $"{package.Id} uses the '{prefix}' prefix but isn't from its verified owner{by}. " +
+                    "It may be pretending to be an official package.")
+                : new Finding(Level.Info,
+                    $"{package.Id} uses the '{prefix}' prefix but isn't from its verified owner{by}, so it isn't official."));
         }
 
         if (selected?.DeprecationMessage is { } deprecation)
         {
+            // "Legacy"/"Other" just means there's a newer option (e.g. xunit 2 -> xunit.v3), so it's
+            // only a note. "CriticalBugs" is worth stopping for.
+            var critical = selected.DeprecationReasons.Any(r => r.Equals("CriticalBugs", StringComparison.OrdinalIgnoreCase));
             var alt = selected.AlternatePackage is null ? "" : $" Suggested alternative: {selected.AlternatePackage}.";
-            findings.Add(new Finding(Level.Warn, $"{package.Id} {selected.Version} is deprecated ({Shorten(deprecation)}).{alt}"));
+            findings.Add(new Finding(critical ? Level.Warn : Level.Info,
+                $"{package.Id} {selected.Version} is deprecated{(critical ? " because of critical bugs" : "")} ({Shorten(deprecation)}).{alt}"));
         }
 
         if (selected is { VulnerabilityCount: > 0 })
@@ -123,7 +136,7 @@ public sealed class Bouncer(NuGetClient nuget, BouncerConfig config, TimeProvide
                 $"vulnerabilit{(selected.VulnerabilityCount == 1 ? "y" : "ies")} (worst: {severity})."));
         }
 
-        if (findings.Count == 0)
+        if (findings.All(f => f.Level == Level.Info))
         {
             findings.Add(new Finding(Level.Ok,
                 $"{package.Id} looks fine: {package.TotalDownloads:N0} downloads" +
@@ -141,8 +154,11 @@ public sealed class Bouncer(NuGetClient nuget, BouncerConfig config, TimeProvide
         package.Versions.LastOrDefault(v => v.Listed && !v.Version.Contains('-'))
         ?? package.Versions.LastOrDefault(v => v.Listed);
 
-    private static string Shorten(string text, int max = 160) =>
-        text.Length <= max ? text : text[..max].TrimEnd() + "…";
+    private static string Shorten(string text, int max = 160)
+    {
+        var oneLine = string.Join(' ', text.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
+        return oneLine.Length <= max ? oneLine : oneLine[..max].TrimEnd() + "…";
+    }
 
     private static bool IsVersionRange(string version) =>
         version.IndexOfAny(['[', '(', ',', '*']) >= 0;

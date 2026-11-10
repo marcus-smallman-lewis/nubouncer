@@ -8,7 +8,8 @@ public sealed record PackageInfo(
     string Id,
     IReadOnlyList<VersionInfo> Versions,
     long TotalDownloads,
-    bool Verified);
+    bool Verified,
+    IReadOnlyList<string>? Owners = null);
 
 public sealed record VersionInfo(
     string Version,
@@ -16,6 +17,7 @@ public sealed record VersionInfo(
     bool Listed,
     string? DeprecationMessage,
     string? AlternatePackage,
+    IReadOnlyList<string> DeprecationReasons,
     int VulnerabilityCount,
     int MaxVulnerabilitySeverity);
 
@@ -42,8 +44,8 @@ public sealed class NuGetClient(HttpClient http)
         var versions = await GetVersionsAsync(id, ct);
         if (versions is null) return null;
 
-        var (downloads, verified) = await GetSearchStatsAsync(id, ct);
-        return new PackageInfo(id, versions, downloads, verified);
+        var (downloads, verified, owners) = await GetSearchStatsAsync(id, ct);
+        return new PackageInfo(id, versions, downloads, verified, owners);
     }
 
     private async Task EnsureServiceIndexAsync(CancellationToken ct)
@@ -108,12 +110,17 @@ public sealed class NuGetClient(HttpClient http)
             var listed = !entry.TryGetProperty("listed", out var l) || l.ValueKind != JsonValueKind.False;
 
             string? deprecation = null, alternate = null;
+            List<string> reasonList = [];
             if (entry.TryGetProperty("deprecation", out var dep))
             {
-                deprecation = dep.TryGetProperty("message", out var m) ? m.GetString() : null;
-                if (string.IsNullOrWhiteSpace(deprecation) && dep.TryGetProperty("reasons", out var reasons))
+                if (dep.TryGetProperty("reasons", out var reasons))
                 {
-                    deprecation = string.Join(", ", reasons.EnumerateArray().Select(r => r.GetString()));
+                    reasonList = reasons.EnumerateArray().Select(r => r.GetString() ?? "").ToList();
+                }
+                deprecation = dep.TryGetProperty("message", out var m) ? m.GetString() : null;
+                if (string.IsNullOrWhiteSpace(deprecation))
+                {
+                    deprecation = reasonList.Count > 0 ? string.Join(", ", reasonList) : "deprecated";
                 }
                 if (dep.TryGetProperty("alternatePackage", out var alt) && alt.TryGetProperty("id", out var altId))
                 {
@@ -134,20 +141,23 @@ public sealed class NuGetClient(HttpClient http)
                 }
             }
 
-            into.Add(new VersionInfo(version, published, listed, deprecation, alternate, vulnCount, maxSeverity));
+            into.Add(new VersionInfo(version, published, listed, deprecation, alternate, reasonList, vulnCount, maxSeverity));
         }
     }
 
-    private async Task<(long Downloads, bool Verified)> GetSearchStatsAsync(string id, CancellationToken ct)
+    private async Task<(long Downloads, bool Verified, List<string> Owners)> GetSearchStatsAsync(string id, CancellationToken ct)
     {
         var url = $"{_searchBase}?q=packageid:{Uri.EscapeDataString(id)}&prerelease=true&semVerLevel=2.0.0&take=1";
         using var doc = JsonDocument.Parse(await http.GetStringAsync(url, ct));
         var data = doc.RootElement.GetProperty("data");
-        if (data.GetArrayLength() == 0) return (0, false);
+        if (data.GetArrayLength() == 0) return (0, false, []);
 
         var hit = data[0];
         var downloads = hit.TryGetProperty("totalDownloads", out var d) ? d.GetInt64() : 0;
         var verified = hit.TryGetProperty("verified", out var v) && v.ValueKind == JsonValueKind.True;
-        return (downloads, verified);
+        var owners = hit.TryGetProperty("owners", out var o) && o.ValueKind == JsonValueKind.Array
+            ? o.EnumerateArray().Select(x => x.GetString() ?? "").Where(x => x.Length > 0).ToList()
+            : [];
+        return (downloads, verified, owners);
     }
 }

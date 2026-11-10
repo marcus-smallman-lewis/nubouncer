@@ -482,3 +482,6 @@ $RECYCLE.BIN/
 *.swp
 
 nupkg/
+
+# Local validation output (contains machine paths)
+validation/*/result.txt

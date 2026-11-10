@@ -35,10 +35,10 @@ public static class ClaudeHook
         }
 
         var worst = verdicts.Max(v => v.Level);
-        if (worst == Level.Ok) return 0;
+        if (worst <= Level.Info) return 0;
 
-        var problems = verdicts.Where(v => v.Level > Level.Ok)
-            .SelectMany(v => v.Findings.Where(f => f.Level > Level.Ok).Select(f => f.Message));
+        var problems = verdicts.Where(v => v.Level >= Level.Warn)
+            .SelectMany(v => v.Findings.Where(f => f.Level >= Level.Warn).Select(f => f.Message));
         var reason = "NuBouncer: " + string.Join(" ", problems);
 
         await stdout.WriteLineAsync(Decision(worst == Level.Block ? "deny" : "ask", reason));
